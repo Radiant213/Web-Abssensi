@@ -25,7 +25,7 @@ export async function POST(request: NextRequest) {
         console.log(`[SCAN] ✅ Kartu terdeteksi: ${uid}`);
 
         // Ambil session aktif dari Supabase
-        const { data: session, error: sessionError } = await supabaseAdmin
+        const { data: session, error: sessionError } = await supabaseAdmin!
             .from('scan_session')
             .select('*')
             .eq('id', 1)
@@ -71,7 +71,7 @@ export async function POST(request: NextRequest) {
             console.log(`[SCAN] Generated Token: ${newToken}`);
 
             // Reset session untuk kartu baru
-            await supabaseAdmin
+            await supabaseAdmin!
                 .from('scan_session')
                 .update({
                     uid: uid,
@@ -119,7 +119,7 @@ export async function POST(request: NextRequest) {
         // SUDAH REGISTRASI TAPI BELUM ABSEN
         if (!session.ready_to_absen) {
             // Tap pertama setelah registrasi
-            await supabaseAdmin
+            await supabaseAdmin!
                 .from('scan_session')
                 .update({
                     ready_to_absen: true,
@@ -137,7 +137,7 @@ export async function POST(request: NextRequest) {
         }
 
         // Tap kedua — ABSEN SEKARANG!
-        const { error: insertError } = await supabaseAdmin
+        const { error: insertError } = await supabaseAdmin!
             .from('absensi')
             .insert({
                 qr_id: uid,
@@ -156,7 +156,7 @@ export async function POST(request: NextRequest) {
         const waktuSekarang = new Date().toLocaleString('id-ID');
 
         // Mark sudah absen
-        await supabaseAdmin
+        await supabaseAdmin!
             .from('scan_session')
             .update({
                 has_absen: true,

@@ -14,7 +14,7 @@ export async function POST(request: NextRequest) {
         }
 
         // Ambil session aktif
-        const { data: session, error: sessionError } = await supabaseAdmin
+        const { data: session, error: sessionError } = await supabaseAdmin!
             .from('scan_session')
             .select('*')
             .eq('id', 1)
@@ -47,7 +47,7 @@ export async function POST(request: NextRequest) {
         }
 
         // Token benar! Update session
-        await supabaseAdmin
+        await supabaseAdmin!
             .from('scan_session')
             .update({
                 is_token_verified: true,

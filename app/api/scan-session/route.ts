@@ -4,7 +4,7 @@ import { supabaseAdmin } from '@/lib/supabase';
 // GET /api/scan-session — Poll status session scan aktif (untuk frontend)
 export async function GET() {
     try {
-        const { data, error } = await supabaseAdmin
+        const { data, error } = await supabaseAdmin!
             .from('scan_session')
             .select('uid, is_registered, has_absen, nama, kelas')
             .eq('id', 1)

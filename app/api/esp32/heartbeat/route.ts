@@ -37,7 +37,7 @@ export async function POST(request: NextRequest) {
             updateData.last_scan_time = now;
         }
 
-        const { error } = await supabaseAdmin
+        const { error } = await supabaseAdmin!
             .from('esp32_status')
             .update(updateData)
             .eq('id', 1);

@@ -51,7 +51,7 @@ export function RegisterModal({ uid, onClose, onSuccess }: RegisterModalProps) {
             } else {
                 setTokenError(data.message || "Token tidak valid!");
             }
-        } catch (err) {
+        } catch {
             setTokenError("Terjadi kesalahan koneksi");
         } finally {
             setTokenLoading(false);
@@ -84,7 +84,7 @@ export function RegisterModal({ uid, onClose, onSuccess }: RegisterModalProps) {
             } else {
                 setError(data.message || "Gagal mendaftarkan kartu");
             }
-        } catch (err) {
+        } catch {
             setError("Terjadi kesalahan koneksi");
         } finally {
             setLoading(false);

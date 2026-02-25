@@ -16,7 +16,7 @@ export async function POST(request: NextRequest) {
         console.log(`[REGISTER] Input data untuk kartu: ${uid} - ${nama} (${kelas})`);
 
         // Ambil session aktif
-        const { data: session, error: sessionError } = await supabaseAdmin
+        const { data: session, error: sessionError } = await supabaseAdmin!
             .from('scan_session')
             .select('*')
             .eq('id', 1)
@@ -48,7 +48,7 @@ export async function POST(request: NextRequest) {
         }
 
         // Update session dengan data registrasi (BELUM absen!)
-        await supabaseAdmin
+        await supabaseAdmin!
             .from('scan_session')
             .update({
                 nama: nama,

@@ -27,7 +27,7 @@ export async function POST(request: NextRequest) {
           );
         }
         // Insert ke tabel absensi
-        const { error } = await supabaseAdmin
+        const { error } = await supabaseAdmin!
             .from('absensi')
             .insert({
                 qr_id: rfid_uid,

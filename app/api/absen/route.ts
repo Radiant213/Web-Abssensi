@@ -20,6 +20,12 @@ export async function POST(request: NextRequest) {
 
         console.log(`[ABSEN] Menerima data absen: ${nama || 'unknown'} (${rfid_uid})`);
 
+        if (!supabaseAdmin) {
+            return NextResponse.json(
+                { error: 'Koneksi ke Supabase gagal, cek Environment Variables!' }, 
+                { status: 500 }
+          );
+        }
         // Insert ke tabel absensi
         const { error } = await supabaseAdmin
             .from('absensi')

@@ -4,7 +4,7 @@ import { supabaseAdmin } from '@/lib/supabase';
 // GET /api/esp32/status — Return status ESP32 terakhir
 export async function GET() {
     try {
-        const { data, error } = await supabaseAdmin
+        const { data, error } = await supabaseAdmin!
             .from('esp32_status')
             .select('*')
             .eq('id', 1)

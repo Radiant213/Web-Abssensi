@@ -4,7 +4,7 @@ import { supabaseAdmin } from '@/lib/supabase';
 // GET /api/history — Ambil semua history absensi
 export async function GET() {
     try {
-        const { data, error } = await supabaseAdmin
+        const { data, error } = await supabaseAdmin!
             .from('absensi')
             .select('*')
             .order('id', { ascending: false });

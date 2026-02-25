@@ -4,7 +4,7 @@ import { supabaseAdmin } from '@/lib/supabase';
 // GET /api/kartu — Ambil semua data kartu
 export async function GET() {
     try {
-        const { data, error } = await supabaseAdmin
+        const { data, error } = await supabaseAdmin!
             .from('kartu')
             .select('*')
             .order('created_at', { ascending: false });

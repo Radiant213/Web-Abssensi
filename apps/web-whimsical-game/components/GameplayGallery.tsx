@@ -1,6 +1,6 @@
 "use client";
-import { useState, useRef } from "react";
-import { Play, Pause, Film, Volume2, VolumeX, Maximize2, Sparkles } from "lucide-react";
+import { useState, useRef, useEffect } from "react";
+import { Play, Pause, Film, Volume2, VolumeX, Maximize2, Sparkles, RefreshCw, Radio } from "lucide-react";
 
 export function GameplayGallery() {
     const clips = [
@@ -54,37 +54,61 @@ export function GameplayGallery() {
         }
     ];
 
-    const [activeClip, setActiveClip] = useState(clips[0]);
+    const [currentIndex, setCurrentIndex] = useState(0);
+    const activeClip = clips[currentIndex];
     const videoRef = useRef<HTMLVideoElement>(null);
-    const [isPlaying, setIsPlaying] = useState(false);
-    const [isMuted, setIsMuted] = useState(false);
+    const sectionRef = useRef<HTMLElement>(null);
+    const [isPlaying, setIsPlaying] = useState(true);
+    const [isMuted, setIsMuted] = useState(true);
 
-    const togglePlay = () => {
-        if (!videoRef.current) return;
-        if (videoRef.current.paused) {
-            videoRef.current.play();
-            setIsPlaying(true);
-        } else {
-            videoRef.current.pause();
-            setIsPlaying(false);
+    // Auto Play saat section masuk ke viewport layar
+    useEffect(() => {
+        const observer = new IntersectionObserver(
+            (entries) => {
+                entries.forEach((entry) => {
+                    if (entry.isIntersecting && videoRef.current) {
+                        videoRef.current.play().then(() => {
+                            setIsPlaying(true);
+                        }).catch(() => {
+                            // Browser policy fallback
+                        });
+                    }
+                });
+            },
+            { threshold: 0.25 }
+        );
+
+        if (sectionRef.current) {
+            observer.observe(sectionRef.current);
         }
+
+        return () => observer.disconnect();
+    }, []);
+
+    // Otomatis play saat clip berganti
+    useEffect(() => {
+        if (videoRef.current) {
+            videoRef.current.currentTime = 0;
+            videoRef.current.play().then(() => {
+                setIsPlaying(true);
+            }).catch(() => {});
+        }
+    }, [currentIndex]);
+
+    // Handle saat 1 video selesai -> Otomatis lanjut ke video berikutnya (Infinite Looping Playlist)
+    const handleVideoEnded = () => {
+        setCurrentIndex((prev) => (prev + 1) % clips.length);
     };
 
     const toggleMute = () => {
         if (!videoRef.current) return;
-        videoRef.current.muted = !videoRef.current.muted;
-        setIsMuted(videoRef.current.muted);
-    };
-
-    const handleFullscreen = () => {
-        if (!videoRef.current) return;
-        if (videoRef.current.requestFullscreen) {
-            videoRef.current.requestFullscreen();
-        }
+        const newMuteState = !isMuted;
+        videoRef.current.muted = newMuteState;
+        setIsMuted(newMuteState);
     };
 
     return (
-        <section id="gallery" className="py-20 px-4 sm:px-6">
+        <section id="gallery" ref={sectionRef} className="py-20 px-4 sm:px-6">
             <div className="max-w-7xl mx-auto space-y-12">
                 <div className="flex flex-col md:flex-row md:items-end justify-between gap-6">
                     <div className="space-y-3">
@@ -95,8 +119,23 @@ export function GameplayGallery() {
                             Gameplay <span className="text-rose-500">Footage Video</span>
                         </h2>
                         <p className="text-gray-400 text-sm max-w-2xl leading-relaxed">
-                            Pilih cuplikan di bawah untuk memutar video rekaman gameplay langsung beresolusi tinggi dari game Unity 6.3 LTS.
+                            Video preview otomatis memutar (*Auto-Play Continuous Loop*). Tonton seluruh rekaman gameplay dari Unity 6.3 LTS secara berurutan.
                         </p>
+                    </div>
+
+                    {/* Mute/Unmute audio button */}
+                    <div className="flex items-center gap-3 shrink-0">
+                        <button
+                            onClick={toggleMute}
+                            className={`px-5 py-2.5 rounded-full border text-xs font-bold transition-all flex items-center gap-2 cursor-pointer shadow-lg ${
+                                isMuted
+                                    ? 'bg-rose-950/40 border-rose-500/40 text-rose-300 hover:bg-rose-900/60'
+                                    : 'bg-emerald-500/20 border-emerald-500/50 text-emerald-300 hover:bg-emerald-500/30 ring-2 ring-emerald-500/30'
+                            }`}
+                        >
+                            {isMuted ? <VolumeX size={15} /> : <Volume2 size={15} />}
+                            <span>{isMuted ? 'Nyalakan Audio Horor' : 'Audio Aktif 🔊'}</span>
+                        </button>
                     </div>
                 </div>
 
@@ -105,24 +144,33 @@ export function GameplayGallery() {
                     {/* Active Video Spotlight Box (7 Cols) */}
                     <div className="lg:col-span-7 space-y-4">
                         <div className="relative aspect-video rounded-[2rem] overflow-hidden horror-card-red border border-rose-500/40 bg-black group shadow-2xl">
-                            {/* Real HTML5 Video Tag */}
+                            {/* Real HTML5 Video Tag with Auto-Play, Muted, PlaysInline & onEnded Next */}
                             <video
                                 key={activeClip.videoSrc}
                                 ref={videoRef}
                                 src={activeClip.videoSrc}
-                                controls
+                                autoPlay
+                                muted={isMuted}
                                 playsInline
+                                controls
+                                onEnded={handleVideoEnded}
                                 onPlay={() => setIsPlaying(true)}
                                 onPause={() => setIsPlaying(false)}
                                 className="w-full h-full object-cover"
                             />
+
+                            {/* Floating Loop Status Badge */}
+                            <div className="absolute top-4 left-4 z-20 pointer-events-none flex items-center gap-2 bg-black/70 backdrop-blur-md px-3 py-1 rounded-full border border-white/10 text-[11px] text-gray-200">
+                                <span className="w-2 h-2 rounded-full bg-rose-500 animate-ping"></span>
+                                <span className="font-mono">Auto-Looping: Clip {currentIndex + 1} / {clips.length}</span>
+                            </div>
                         </div>
 
                         {/* Video Metadata Info Strip */}
                         <div className="p-5 rounded-2xl horror-glass flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                             <div className="space-y-1">
                                 <div className="flex items-center gap-2">
-                                    <span className="w-2.5 h-2.5 rounded-full bg-rose-500 animate-ping"></span>
+                                    <span className="w-2.5 h-2.5 rounded-full bg-rose-500"></span>
                                     <span className="text-sm font-bold text-white">{activeClip.title}</span>
                                 </div>
                                 <p className="text-xs text-gray-400 max-w-md">
@@ -137,37 +185,43 @@ export function GameplayGallery() {
 
                     {/* Clip List Selector (5 Cols) */}
                     <div className="lg:col-span-5 space-y-3">
-                        <h4 className="text-xs font-bold uppercase tracking-wider text-gray-400 px-1">
-                            Pilih Rekaman Gameplay (Klik untuk Putar Video):
-                        </h4>
+                        <div className="flex items-center justify-between px-1">
+                            <h4 className="text-xs font-bold uppercase tracking-wider text-gray-400">
+                                Playlist Rekaman Gameplay:
+                            </h4>
+                            <span className="text-[11px] text-rose-400 font-mono flex items-center gap-1">
+                                <RefreshCw size={11} className="animate-spin" /> Continuous Play
+                            </span>
+                        </div>
                         <div className="space-y-2.5 max-h-[500px] overflow-y-auto pr-1">
-                            {clips.map((clip) => (
+                            {clips.map((clip, idx) => (
                                 <button
                                     key={clip.id}
                                     onClick={() => {
-                                        setActiveClip(clip);
-                                        setIsPlaying(true);
+                                        setCurrentIndex(idx);
                                     }}
                                     className={`w-full text-left p-4 rounded-2xl border transition-all flex items-start gap-4 cursor-pointer ${
-                                        activeClip.id === clip.id
-                                            ? 'horror-card-red border-rose-500/60 shadow-lg shadow-rose-950/50 ring-2 ring-rose-500/40 bg-rose-950/20'
+                                        currentIndex === idx
+                                            ? 'horror-card-red border-rose-500/60 shadow-lg shadow-rose-950/50 ring-2 ring-rose-500/40 bg-rose-950/30'
                                             : 'horror-glass border-white/5 hover:border-rose-500/30'
                                     }`}
                                 >
                                     <div className={`p-3 rounded-xl shrink-0 mt-0.5 ${
-                                        activeClip.id === clip.id
+                                        currentIndex === idx
                                             ? 'bg-rose-600 text-white shadow-md shadow-rose-600/50'
                                             : 'bg-white/5 text-gray-400'
                                     }`}>
-                                        <Play size={18} className={activeClip.id === clip.id ? "fill-white" : ""} />
+                                        <Play size={18} className={currentIndex === idx ? "fill-white" : ""} />
                                     </div>
                                     <div className="space-y-1 flex-1 min-w-0">
                                         <div className="flex items-center justify-between gap-2">
                                             <h5 className="text-sm font-bold text-white truncate">
                                                 {clip.title}
                                             </h5>
-                                            <span className="text-[10px] font-mono text-rose-400 shrink-0 font-bold">
-                                                CLIP #{clip.id}
+                                            <span className={`text-[10px] font-mono shrink-0 font-bold ${
+                                                currentIndex === idx ? 'text-rose-400' : 'text-gray-500'
+                                            }`}>
+                                                {currentIndex === idx ? '▶ PLAYING' : `#${clip.id}`}
                                             </span>
                                         </div>
                                         <p className="text-xs text-gray-400 line-clamp-2 leading-relaxed">

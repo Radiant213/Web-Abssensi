@@ -1,0 +1,71 @@
+@import "tailwindcss";
+
+:root {
+  --background: #040508;
+  --foreground: #e2e8f0;
+  --blood-red: #e11d48;
+  --eerie-purple: #7c3aed;
+  --horror-glow: rgba(225, 29, 72, 0.2);
+}
+
+body {
+  background-color: var(--background);
+  color: var(--foreground);
+  font-family: var(--font-outfit), sans-serif;
+  overflow-x: hidden;
+}
+
+/* Horror Ambient Overlay */
+.vignette-overlay {
+  background: radial-gradient(circle, transparent 40%, rgba(0, 0, 0, 0.85) 90%);
+}
+
+.horror-glass {
+  background: rgba(10, 14, 22, 0.75);
+  backdrop-filter: blur(18px);
+  -webkit-backdrop-filter: blur(18px);
+  border: 1px solid rgba(225, 29, 72, 0.15);
+}
+
+.horror-card {
+  background: rgba(12, 16, 26, 0.85);
+  backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.6);
+}
+
+.horror-card-red {
+  background: rgba(18, 12, 16, 0.85);
+  backdrop-filter: blur(20px);
+  border: 1px solid rgba(225, 29, 72, 0.25);
+  box-shadow: 0 20px 50px rgba(225, 29, 72, 0.1);
+}
+
+/* Custom Scrollbar */
+::-webkit-scrollbar {
+  width: 7px;
+}
+::-webkit-scrollbar-track {
+  background: #040508;
+}
+::-webkit-scrollbar-thumb {
+  background: #271018;
+  border-radius: 4px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #4c0519;
+}
+
+/* Subtle Flicker Animation */
+@keyframes flicker {
+  0%, 100% { opacity: 1; }
+  41.99% { opacity: 1; }
+  42% { opacity: 0.3; }
+  43% { opacity: 1; }
+  45% { opacity: 0.4; }
+  46% { opacity: 1; }
+}
+
+.animate-flicker {
+  animation: flicker 6s infinite;
+}

@@ -1,11 +1,14 @@
 @import "tailwindcss";
 
 :root {
-  --background: #040508;
-  --foreground: #e2e8f0;
+  --background: #030407;
+  --foreground: #f1f5f9;
   --blood-red: #e11d48;
   --eerie-purple: #7c3aed;
-  --horror-glow: rgba(225, 29, 72, 0.2);
+}
+
+html {
+  scroll-behavior: smooth;
 }
 
 body {
@@ -13,59 +16,85 @@ body {
   color: var(--foreground);
   font-family: var(--font-outfit), sans-serif;
   overflow-x: hidden;
+  -webkit-tap-highlight-color: transparent;
 }
 
-/* Horror Ambient Overlay */
-.vignette-overlay {
-  background: radial-gradient(circle, transparent 40%, rgba(0, 0, 0, 0.85) 90%);
-}
-
+/* Horror Glass Elements */
 .horror-glass {
-  background: rgba(10, 14, 22, 0.75);
+  background: rgba(10, 14, 24, 0.75);
   backdrop-filter: blur(18px);
   -webkit-backdrop-filter: blur(18px);
   border: 1px solid rgba(225, 29, 72, 0.15);
+  transition: all 0.3s cubic-bezier(0.16, 1, 0.3, 1);
 }
 
 .horror-card {
-  background: rgba(12, 16, 26, 0.85);
+  background: rgba(11, 15, 26, 0.85);
   backdrop-filter: blur(20px);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.6);
+  -webkit-backdrop-filter: blur(20px);
+  border: 1px solid rgba(255, 255, 255, 0.07);
+  box-shadow: 0 20px 50px rgba(0, 0, 0, 0.7);
+  transition: transform 0.4s cubic-bezier(0.16, 1, 0.3, 1), border-color 0.4s ease, box-shadow 0.4s ease;
+}
+
+.horror-card:hover {
+  transform: translateY(-4px);
+  border-color: rgba(225, 29, 72, 0.35);
+  box-shadow: 0 25px 60px rgba(225, 29, 72, 0.12);
 }
 
 .horror-card-red {
-  background: rgba(18, 12, 16, 0.85);
+  background: rgba(18, 10, 14, 0.85);
   backdrop-filter: blur(20px);
+  -webkit-backdrop-filter: blur(20px);
   border: 1px solid rgba(225, 29, 72, 0.25);
-  box-shadow: 0 20px 50px rgba(225, 29, 72, 0.1);
+  box-shadow: 0 20px 50px rgba(225, 29, 72, 0.15);
 }
 
 /* Custom Scrollbar */
 ::-webkit-scrollbar {
-  width: 7px;
+  width: 6px;
 }
 ::-webkit-scrollbar-track {
-  background: #040508;
+  background: #030407;
 }
 ::-webkit-scrollbar-thumb {
-  background: #271018;
-  border-radius: 4px;
+  background: #2b0b14;
+  border-radius: 999px;
 }
 ::-webkit-scrollbar-thumb:hover {
-  background: #4c0519;
+  background: #e11d48;
 }
 
-/* Subtle Flicker Animation */
+/* Animations */
 @keyframes flicker {
   0%, 100% { opacity: 1; }
-  41.99% { opacity: 1; }
-  42% { opacity: 0.3; }
-  43% { opacity: 1; }
-  45% { opacity: 0.4; }
-  46% { opacity: 1; }
+  39.99% { opacity: 1; }
+  40% { opacity: 0.2; }
+  41% { opacity: 1; }
+  42.5% { opacity: 0.3; }
+  43.5% { opacity: 1; }
+}
+
+@keyframes pulseRed {
+  0%, 100% { opacity: 0.15; transform: scale(1); }
+  50% { opacity: 0.45; transform: scale(1.1); }
+}
+
+@keyframes fogDrift {
+  0% { transform: translate(-10%, 0); }
+  50% { transform: translate(10%, -5%); }
+  100% { transform: translate(-10%, 0); }
 }
 
 .animate-flicker {
-  animation: flicker 6s infinite;
+  animation: flicker 7s infinite;
+}
+
+.animate-pulse-red {
+  animation: pulseRed 6s ease-in-out infinite;
+}
+
+.animate-fog {
+  animation: fogDrift 18s ease-in-out infinite;
 }

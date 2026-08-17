@@ -11,38 +11,42 @@ const handle = nextApp.getRequestHandler();
 
 const app = express();
 const server = http.createServer(app);
-const io = new Server(server);
+const io = new Server(server, {
+    cors: {
+        origin: "*",
+        methods: ["GET", "POST"]
+    }
+});
 
 app.use(cors());
 app.use(express.json());
 
 // =====================================================
-// 🔐 SECRET KEY - Ganti dengan key rahasia lo!
-// Hanya ESP32 yang tau key ini boleh akses /api/scan
+// 🔐 KONFIGURASI ENVIRONMENT & SECRET KEY
 // =====================================================
-const API_SECRET = "ESP32_PPLG_2026_SECRET";  // GANTI INI!
+const API_SECRET = process.env.API_SECRET || "ESP32_PPLG_2026_SECRET";
+const PORT = process.env.PORT || 3000;
+const DB_HOST = process.env.DB_HOST || 'localhost';
+const DB_USER = process.env.DB_USER || 'root';
+const DB_PASSWORD = process.env.DB_PASSWORD !== undefined ? process.env.DB_PASSWORD : '';
+const DB_NAME = process.env.DB_NAME || 'iot_db';
 
 // =====================================================
 // SESSION-BASED CARD TRACKING WITH TOKEN
-// Logika: 
-// - Ganti kartu = RESET, harus input data ulang
-// - Token 4 digit untuk verifikasi device
-// - Kartu sama tap lagi setelah registrasi = BLOCKED
 // =====================================================
 let currentSession = {
-    uid: null,           // UID kartu yang sedang aktif
-    token: null,         // Token 4 digit untuk verifikasi
+    uid: null,              // UID kartu yang sedang aktif
+    token: null,            // Token 4 digit untuk verifikasi
     isTokenVerified: false, // Sudah verifikasi token?
-    isRegistered: false, // Sudah registrasi di sesi ini?
-    readyToAbsen: false, // Sudah notify ESP32 bahwa siap absen?
-    hasAbsen: false,     // Sudah absen di sesi ini?
+    isRegistered: false,    // Sudah registrasi di sesi ini?
+    readyToAbsen: false,    // Sudah notify ESP32 bahwa siap absen?
+    hasAbsen: false,        // Sudah absen di sesi ini?
     nama: null,
     kelas: null
 };
 
 // =====================================================
 // ESP32 MONITORING STATUS
-// Data dikirim via heartbeat dari ESP32
 // =====================================================
 let esp32Status = {
     online: false,
@@ -59,13 +63,25 @@ let esp32Status = {
     }
 };
 
+// =====================================================
+// ANTRIAN UPDATE KONFIGURASI WIFI DARI WEB KE ESP32
+// =====================================================
+let pendingWifiConfig = {
+    ssid: "",
+    password: "",
+    pending: false,
+    updated_at: null,
+    synced_at: null
+};
+
 // Check ESP32 offline (no heartbeat for 30 seconds)
 setInterval(() => {
     if (esp32Status.lastHeartbeat) {
         const diff = Date.now() - new Date(esp32Status.lastHeartbeat).getTime();
-        if (diff > 30000) {
+        if (diff > 30000 && esp32Status.online) {
             esp32Status.online = false;
             io.emit('esp32Status', esp32Status);
+            console.log('[MONITOR] ESP32 ditandai OFFLINE (timeout > 30s)');
         }
     }
 }, 10000);
@@ -75,22 +91,30 @@ function generateToken() {
     return String(Math.floor(1000 + Math.random() * 9000));
 }
 
-// MySQL Connection
-const db = mysql.createConnection({
-    host: 'localhost',
-    user: 'root',
-    password: '',
-    database: 'iot_db'
+// MySQL Connection Pool
+const db = mysql.createPool({
+    host: DB_HOST,
+    user: DB_USER,
+    password: DB_PASSWORD,
+    database: DB_NAME,
+    waitForConnections: true,
+    connectionLimit: 10,
+    queueLimit: 0
 });
 
-db.connect(err => {
-    if (err) console.error('Gagal konek MySQL:', err);
-    else console.log('MySQL Konek, Bang!');
+// Test Koneksi MySQL
+db.getConnection((err, conn) => {
+    if (err) {
+        console.error('❌ Gagal konek MySQL:', err.message);
+    } else {
+        console.log(`✅ MySQL Konek Berhasil ke ${DB_HOST}/${DB_NAME}`);
+        conn.release();
+    }
 });
 
 nextApp.prepare().then(() => {
     // =====================================================
-    // API: ESP32 HEARTBEAT (Status monitoring)
+    // API: ESP32 HEARTBEAT (Status monitoring & WiFi sync)
     // 🔐 PROTECTED: Memerlukan API_SECRET
     // =====================================================
     app.post('/api/esp32/heartbeat', (req, res) => {
@@ -112,18 +136,109 @@ nextApp.prepare().then(() => {
             esp32Status.lastScanTime = new Date().toISOString();
         }
 
-        // Emit to all connected clients
+        // Emit status ke semua client website
         io.emit('esp32Status', esp32Status);
 
-        console.log(`[HEARTBEAT] ESP32 Online - WiFi: ${wifiSignal}dBm, Uptime: ${uptime}s`);
-        return res.json({ status: "ok" });
+        // Siapkan respon payload
+        let responsePayload = {
+            status: "ok",
+            session: {
+                hasActiveCard: !!currentSession.uid,
+                isTokenVerified: currentSession.isTokenVerified,
+                isRegistered: currentSession.isRegistered,
+                readyToAbsen: currentSession.readyToAbsen,
+                hasAbsen: currentSession.hasAbsen,
+                nama: currentSession.nama
+            }
+        };
+
+        // Cek jika ada antrian pergantian WiFi yang belum dikirim ke ESP32
+        if (pendingWifiConfig && pendingWifiConfig.pending && pendingWifiConfig.ssid) {
+            responsePayload.wifiConfig = {
+                update: true,
+                ssid: pendingWifiConfig.ssid,
+                password: pendingWifiConfig.password
+            };
+            console.log(`[HEARTBEAT] 📡 Mengirim instruksi WiFi baru (${pendingWifiConfig.ssid}) ke ESP32!`);
+
+            // Tandai sudah terkirim ke ESP32
+            pendingWifiConfig.pending = false;
+            pendingWifiConfig.synced_at = new Date().toISOString();
+            io.emit('wifiConfigUpdated', pendingWifiConfig);
+        }
+
+        return res.json(responsePayload);
     });
 
     // =====================================================
-    // API: GET ESP32 STATUS (untuk frontend)
+    // API: GET ESP32 STATUS (untuk frontend monitoring)
     // =====================================================
     app.get('/api/esp32/status', (req, res) => {
-        res.json(esp32Status);
+        // Cek online status real-time
+        let isOnline = esp32Status.online;
+        if (esp32Status.lastHeartbeat) {
+            const diff = Date.now() - new Date(esp32Status.lastHeartbeat).getTime();
+            if (diff > 30000) isOnline = false;
+        }
+        res.json({
+            ...esp32Status,
+            online: isOnline
+        });
+    });
+
+    // =====================================================
+    // API: GANTI KONFIGURASI WIFI ESP32 (dari web dashboard)
+    // 🔐 PROTECTED: Memerlukan Password Keamanan Admin (Admin12345)
+    // =====================================================
+    const ADMIN_PASSWORD = process.env.ADMIN_PASSWORD || "Admin12345";
+
+    app.post('/api/esp32/wifi-config', (req, res) => {
+        const { ssid, password, adminPassword } = req.body;
+
+        // Validasi Password Keamanan Admin
+        if (!adminPassword || adminPassword !== ADMIN_PASSWORD) {
+            return res.status(401).json({ 
+                status: "error", 
+                message: "Password Keamanan Admin salah! Akses ditolak." 
+            });
+        }
+
+        if (!ssid || !password) {
+            return res.status(400).json({ status: "error", message: "SSID dan Password WiFi harus diisi!" });
+        }
+
+        pendingWifiConfig = {
+            ssid: ssid.trim(),
+            password: password.trim(),
+            pending: true,
+            updated_at: new Date().toISOString(),
+            synced_at: null
+        };
+
+        io.emit('wifiConfigUpdated', pendingWifiConfig);
+        console.log(`[WIFI-CONFIG] 📝 Antrian WiFi baru disimpan (Admin Auth OK): SSID=${ssid}`);
+
+        return res.json({
+            status: "success",
+            message: `Konfigurasi WiFi berhasil dijadwalkan! ESP32 akan menyambung ke "${ssid}" saat heartbeat berikutnya.`
+        });
+    });
+
+    app.get('/api/esp32/wifi-config', (req, res) => {
+        res.json(pendingWifiConfig);
+    });
+
+    // =====================================================
+    // API: GET SCAN SESSION (untuk polling frontend web)
+    // =====================================================
+    app.get('/api/scan-session', (req, res) => {
+        res.json({
+            uid: currentSession.uid,
+            is_registered: currentSession.isRegistered,
+            has_absen: currentSession.hasAbsen,
+            nama: currentSession.nama,
+            kelas: currentSession.kelas
+        });
     });
 
     // =====================================================
@@ -147,22 +262,10 @@ nextApp.prepare().then(() => {
         }
 
         console.log(`[SCAN] ✅ Kartu terdeteksi: ${uid}`);
-        console.log(`[SCAN] Current session: uid=${currentSession.uid}, hasAbsen=${currentSession.hasAbsen}`);
 
-        // =====================================================
-        // LOGIKA:
-        // 1. Ada pending registration (sudah registrasi tapi belum absen)?
-        //    - Kartu SAMA = boleh lanjut absen
-        //    - Kartu BEDA = BLOCKED! Selesaikan dulu
-        // 2. Tidak ada pending = kartu baru = minta registrasi
-        // 3. Kartu SAMA + sudah absen = BLOCKED (duplicate)
-        // =====================================================
-
-        // Cek apakah ada PENDING REGISTRATION (sudah registrasi tapi belum absen)
+        // Cek apakah ada PENDING REGISTRATION
         if (currentSession.isRegistered && !currentSession.hasAbsen) {
-            // Ada pending! Cek apakah kartu sama atau beda
             if (currentSession.uid !== uid) {
-                // KARTU BEDA = BLOCKED! Harus selesaikan absen kartu sebelumnya
                 console.log(`[SCAN] BLOCKED! Ada pending absen untuk ${currentSession.nama}. Kartu ${uid} tidak bisa scan.`);
                 return res.json({
                     status: "pending",
@@ -171,15 +274,12 @@ nextApp.prepare().then(() => {
                     message: `Selesaikan absen ${currentSession.nama} dulu!`
                 });
             }
-            // Kartu SAMA = lanjut ke proses absen (handled di bawah)
         }
 
-        // Cek apakah kartu BERBEDA dari session aktif (dan tidak ada pending)
+        // Cek apakah kartu BERBEDA dari session aktif
         if (currentSession.uid !== uid) {
-            // GANTI KARTU = RESET SESSION + GENERATE TOKEN
             const newToken = generateToken();
-            console.log(`[SCAN] GANTI KARTU: ${currentSession.uid || 'none'} -> ${uid}`);
-            console.log(`[SCAN] Generated Token: ${newToken}`);
+            console.log(`[SCAN] GANTI KARTU: ${currentSession.uid || 'none'} -> ${uid} | Token: ${newToken}`);
 
             // Reset session untuk kartu baru
             currentSession = {
@@ -193,47 +293,42 @@ nextApp.prepare().then(() => {
                 kelas: null
             };
 
-            // Emit ke website (tanpa data, hanya notifikasi)
+            // Emit ke website
             io.emit('kartuBaru', { uid, hasToken: true });
 
             return res.json({
                 status: "unregistered",
                 uid: uid,
-                token: newToken,  // Kirim token ke ESP32 untuk ditampilkan
+                token: newToken,
                 message: "Kartu baru terdeteksi, masukkan token di website"
             });
         }
 
         // Kartu SAMA dengan session aktif
-        // Cek apakah sudah registrasi?
         if (!currentSession.isRegistered) {
-            // Belum registrasi = tetap unregistered, KIRIM TOKEN LAGI!
             console.log(`[SCAN] Kartu ${uid} belum registrasi di sesi ini, token: ${currentSession.token}`);
             io.emit('kartuBaru', { uid, hasToken: true });
             return res.json({
                 status: "unregistered",
                 uid: uid,
-                token: currentSession.token,  // PENTING: Kirim token biar ESP32 bisa tampilkan!
+                token: currentSession.token,
                 message: "Kartu belum registrasi, silakan input token di website"
             });
         }
 
         // Sudah registrasi, cek apakah sudah absen?
         if (currentSession.hasAbsen) {
-            // Sudah absen = BLOCKED
-            console.log(`[SCAN] ${currentSession.nama} sudah absen - BLOCKED`);
+            console.log(`[SCAN] ${currentSession.nama} sudah absen - DUPLICATE BLOCKED`);
             return res.json({
                 status: "duplicate",
                 nama: currentSession.nama,
                 kelas: currentSession.kelas,
-                message: "Anda sudah absen"
+                message: "Anda sudah absen hari ini!"
             });
         }
 
-        // SUDAH REGISTRASI TAPI BELUM ABSEN
-        // Cek apakah ini tap pertama setelah registrasi (untuk notify ESP32)
+        // SUDAH REGISTRASI TAPI BELUM ABSEN (Tap pertama untuk ready)
         if (!currentSession.readyToAbsen) {
-            // Ini tap pertama setelah registrasi - kasih tau ESP32 token verified
             currentSession.readyToAbsen = true;
             console.log(`[SCAN] ${currentSession.nama} - Token verified, ready to absen`);
             return res.json({
@@ -244,9 +339,7 @@ nextApp.prepare().then(() => {
             });
         }
 
-        // Tap kedua - absen sekarang!
-
-        // Insert ke tabel absensi
+        // Tap kedua - SIMPAN KE DATABASE ABSENSI
         const insertAbsen = "INSERT INTO absensi (qr_id, nama, kelas) VALUES (?, ?, ?)";
         db.query(insertAbsen, [uid, currentSession.nama, currentSession.kelas], (err, result) => {
             if (err) {
@@ -255,7 +348,7 @@ nextApp.prepare().then(() => {
             }
 
             const waktuSekarang = new Date().toLocaleString('id-ID');
-            currentSession.hasAbsen = true;  // Mark sudah absen
+            currentSession.hasAbsen = true; // Mark sudah absen
 
             // Emit ke website
             io.emit('absenBaru', {
@@ -265,7 +358,7 @@ nextApp.prepare().then(() => {
                 waktu: waktuSekarang
             });
 
-            console.log(`[SCAN] Absen berhasil: ${currentSession.nama}`);
+            console.log(`[SCAN] 🎉 Absen berhasil disimpan: ${currentSession.nama} (${currentSession.kelas})`);
             return res.json({
                 status: "success",
                 nama: currentSession.nama,
@@ -278,7 +371,6 @@ nextApp.prepare().then(() => {
 
     // =====================================================
     // API: VERIFY TOKEN
-    // User harus verifikasi token sebelum bisa registrasi
     // =====================================================
     app.post('/api/verify-token', (req, res) => {
         const { token } = req.body;
@@ -287,22 +379,19 @@ nextApp.prepare().then(() => {
             return res.status(400).json({ status: "error", message: "Token harus diisi" });
         }
 
-        console.log(`[TOKEN] Verifying token: ${token} (Expected: ${currentSession.token})`);
+        console.log(`[TOKEN] Verifikasi token: ${token} (Expected: ${currentSession.token})`);
 
-        // Cek apakah ada session aktif
         if (!currentSession.uid) {
             return res.status(400).json({ status: "error", message: "Tidak ada kartu yang sedang menunggu" });
         }
 
-        // Cek token
         if (currentSession.token !== token) {
-            console.log(`[TOKEN] Token salah!`);
+            console.log(`[TOKEN] ❌ Token salah!`);
             return res.status(400).json({ status: "error", message: "Token salah!" });
         }
 
-        // Token benar!
         currentSession.isTokenVerified = true;
-        console.log(`[TOKEN] Token verified! UID: ${currentSession.uid}`);
+        console.log(`[TOKEN] ✅ Token valid! UID: ${currentSession.uid}`);
 
         return res.json({
             status: "success",
@@ -313,8 +402,6 @@ nextApp.prepare().then(() => {
 
     // =====================================================
     // API: REGISTER KARTU (Session-based)
-    // Data disimpan ke session, BELUM absen
-    // User harus tap ulang untuk absen
     // =====================================================
     app.post('/api/register', (req, res) => {
         const { uid, nama, kelas } = req.body;
@@ -323,41 +410,38 @@ nextApp.prepare().then(() => {
             return res.status(400).json({ status: "error", message: "UID, nama, dan kelas harus diisi" });
         }
 
-        console.log(`[REGISTER] Input data untuk kartu: ${uid} - ${nama} (${kelas})`);
-
-        // Cek apakah token sudah diverifikasi
         if (!currentSession.isTokenVerified) {
-            console.log(`[REGISTER] Token belum diverifikasi!`);
             return res.status(400).json({ status: "error", message: "Token belum diverifikasi!" });
         }
 
-        // Cek apakah UID cocok dengan session aktif
         if (currentSession.uid !== uid) {
-            console.log(`[REGISTER] UID tidak cocok dengan session! Expected: ${currentSession.uid}, Got: ${uid}`);
             return res.status(400).json({ status: "error", message: "UID tidak cocok, silakan scan ulang kartu" });
         }
 
-        // Update session dengan data registrasi (BELUM absen!)
+        // Simpan data kartu ke master tabel kartu (opsional/upsert)
+        const sqlUpsert = "INSERT INTO kartu (uid, nama, kelas) VALUES (?, ?, ?) ON DUPLICATE KEY UPDATE nama = VALUES(nama), kelas = VALUES(kelas)";
+        db.query(sqlUpsert, [uid, nama, kelas], (err) => {
+            if (err) console.error("Warning insert master kartu:", err.message);
+        });
+
+        // Update session dengan data registrasi
         currentSession.nama = nama;
         currentSession.kelas = kelas;
         currentSession.isRegistered = true;
-        currentSession.hasAbsen = false;  // Belum absen! Harus tap ulang
+        currentSession.hasAbsen = false;
 
-        console.log(`[REGISTER] Session updated: ${JSON.stringify(currentSession)}`);
-
-        // Emit registrasi berhasil
         io.emit('registrasiBerhasil', { uid, nama, kelas });
+        console.log(`[REGISTER] ✅ Berhasil didaftarkan: ${nama} (${kelas})`);
 
-        console.log(`[REGISTER] Berhasil: ${nama} (${kelas}) - Silakan tap untuk absen`);
         return res.json({
             status: "success",
-            message: "Registrasi berhasil! Silakan tap kartu lagi untuk absen.",
+            message: "Registrasi berhasil! Silakan tap kartu lagi di alat untuk absen.",
             data: { uid, nama, kelas }
         });
     });
 
     // =====================================================
-    // API: GET ALL KARTU (untuk admin view)
+    // API: GET ALL KARTU
     // =====================================================
     app.get('/api/kartu', (req, res) => {
         const sql = "SELECT * FROM kartu ORDER BY created_at DESC";
@@ -371,7 +455,7 @@ nextApp.prepare().then(() => {
     // API: GET HISTORY ABSENSI
     // =====================================================
     app.get('/api/history', (req, res) => {
-        const sql = "SELECT * FROM absensi ORDER BY id DESC";
+        const sql = "SELECT * FROM absensi ORDER BY id DESC LIMIT 50";
         db.query(sql, (err, results) => {
             if (err) return res.status(500).json({ error: err.message });
 
@@ -386,43 +470,19 @@ nextApp.prepare().then(() => {
         });
     });
 
-    // =====================================================
-    // API: ABSEN (Legacy - tetap ada untuk backward compat)
-    // =====================================================
-    app.post('/api/absen', (req, res) => {
-        const { id, nama } = req.body;
-        console.log(`[LEGACY] Menerima data absen: ${nama} (${id})`);
-
-        const sql = "INSERT INTO absensi (qr_id, nama) VALUES (?, ?)";
-        db.query(sql, [id, nama], (err, result) => {
-            if (err) {
-                console.error("Error insert DB:", err);
-                return res.status(500).json({ error: err.message });
-            }
-
-            io.emit('absenBaru', {
-                id,
-                nama,
-                waktu: new Date().toLocaleString('id-ID')
-            });
-
-            console.log(`[LEGACY] Data ${nama} berhasil disimpan!`);
-            res.status(200).json({ status: "success" });
-        });
-    });
-
     // Default Next.js Handler
     app.use(async (req, res) => {
         try {
             await handle(req, res);
         } catch (err) {
-            console.error('Error handling request:', err);
+            console.error('Error handling Next.js request:', err);
             res.status(500).send('Internal Server Error');
         }
     });
 
-    server.listen(3000, (err) => {
+    server.listen(PORT, (err) => {
         if (err) throw err;
-        console.log('> Ready on http://localhost:3000');
+        console.log(`> 🚀 SecureGate IoT Web Server Ready on port ${PORT}`);
+        console.log(`> 🌐 Domain: https://absen.skynett.web.id`);
     });
 });

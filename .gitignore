@@ -39,3 +39,8 @@ yarn-error.log*
 # typescript
 *.tsbuildinfo
 next-env.d.ts
+
+kunci.pem
+web-abssensi.tar.gz
+Dockerfile
+docker-compose.yml

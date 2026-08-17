@@ -31,6 +31,17 @@ export default function Home() {
   // State untuk modal (user harus klik button untuk buka modal)
   const [showModal, setShowModal] = useState(false);
 
+  // Fetch status ESP32 live
+  const fetchStatus = useCallback(async () => {
+    try {
+      const res = await fetch("/api/esp32/status");
+      const data = await res.json();
+      setConnected(data.online === true);
+    } catch {
+      setConnected(false);
+    }
+  }, []);
+
   // Fetch history data
   const fetchHistory = useCallback(async () => {
     try {
@@ -41,15 +52,13 @@ export default function Home() {
         if (data.length > 0) {
           setLatest(data[0]);
         }
-        setConnected(true);
       }
     } catch (err) {
       console.error("Gagal ambil history:", err);
-      setConnected(false);
     }
   }, []);
 
-  // Poll scan session untuk detect kartu baru (menggantikan Socket.IO)
+  // Poll scan session untuk detect kartu baru
   const pollSession = useCallback(async () => {
     try {
       const res = await fetch("/api/scan-session");
@@ -64,23 +73,27 @@ export default function Home() {
         setShowModal(false);
       }
     } catch {
-      // Silent fail — session polling bukan critical
+      // Silent fail
     }
   }, []);
 
   useEffect(() => {
     // Initial fetch
+    fetchStatus();
     fetchHistory();
+    pollSession();
 
-    // Polling setiap 3 detik (menggantikan Socket.IO real-time)
+    // Polling interval
+    const statusInterval = setInterval(fetchStatus, 3000);
     const historyInterval = setInterval(fetchHistory, 3000);
     const sessionInterval = setInterval(pollSession, 2000);
 
     return () => {
+      clearInterval(statusInterval);
       clearInterval(historyInterval);
       clearInterval(sessionInterval);
     };
-  }, [fetchHistory, pollSession]);
+  }, [fetchStatus, fetchHistory, pollSession]);
 
   // Handler untuk buka modal
   const handleOpenModal = () => {

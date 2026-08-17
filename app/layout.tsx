@@ -8,8 +8,13 @@ const outfit = Outfit({
 });
 
 export const metadata: Metadata = {
-  title: "IoT Security Dashboard",
-  description: "Real-time Secure Attendance Monitoring",
+  title: "SecureGate - IoT Smart Attendance",
+  description: "Real-time Secure Attendance Monitoring with ESP32 & RFID",
+  icons: {
+    icon: "/favicon.ico?v=2",
+    shortcut: "/favicon.ico?v=2",
+    apple: "/favicon.ico?v=2",
+  },
 };
 
 export default function RootLayout({

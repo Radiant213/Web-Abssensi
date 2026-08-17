@@ -388,7 +388,7 @@ export default function ESP32Monitor() {
                                     </button>
                                 </div>
                                 <p className="text-[11px] text-gray-400">
-                                    Diperlukan password admin (<code className="text-purple-300">Admin12345</code>) untuk mencegah pergantian WiFi tanpa izin.
+                                    Diperlukan password (<code className="text-purple-300">admin</code>) untuk mencegah pergantian WiFi tanpa izin.
                                 </p>
                             </div>
 
